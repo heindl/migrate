@@ -42,6 +42,38 @@ type Gitlab struct {
 type Config struct {
 }
 
+func (g *Gitlab) OpenWithValues(baseUrl, projectID, token, migrationsPath string) (source.Driver, error) {
+
+	client, err := gitlab.NewClient(token, gitlab.WithBaseURL(baseUrl))
+	if err != nil {
+		return nil, err
+	}
+
+	gn := &Gitlab{
+		client:     client,
+		migrations: source.NewMigrations(),
+		projectID:  projectID,
+		path:       migrationsPath,
+	}
+
+	strPtr := func(s string) *string {
+		return &s
+	}
+
+	gn.listOptions = &gitlab.ListTreeOptions{
+		Path: strPtr(migrationsPath),
+		ListOptions: gitlab.ListOptions{
+			PerPage: DefaultMaxItemsPerPage,
+		},
+	}
+
+	if err := gn.readDirectory(); err != nil {
+		return nil, err
+	}
+
+	return gn, nil
+}
+
 func (g *Gitlab) Open(url string) (source.Driver, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
@@ -56,6 +88,8 @@ func (g *Gitlab) Open(url string) (source.Driver, error) {
 	if !ok {
 		return nil, ErrNoAccessToken
 	}
+
+	fmt.Println(u.Host)
 
 	uri := nurl.URL{
 		Scheme: "https",
@@ -77,10 +111,13 @@ func (g *Gitlab) Open(url string) (source.Driver, error) {
 	if len(pe) < 1 {
 		return nil, ErrInvalidProjectID
 	}
+	fmt.Println("project id", pe[0])
 	gn.projectID = pe[0]
 	if len(pe) > 1 {
 		gn.path = strings.Join(pe[1:], "/")
 	}
+
+	fmt.Println("path", gn.path)
 
 	gn.listOptions = &gitlab.ListTreeOptions{
 		Path: &gn.path,
